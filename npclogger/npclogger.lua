@@ -7,7 +7,7 @@ bit = require 'bit'
 
 files = require('files')
 file = T{}
-file.test = files.new('data/logs/test.log', true)
+file.compare = files.new('data/logs/comparison.log', true)
 
 _addon.name = 'NPC Logger'
 _addon.version = '0.1'
@@ -16,6 +16,7 @@ _addon.commands = {'npclogger'}
 
 logged_npcs = S{}
 seen_names = S{}
+npc_info = {}
 npc_names = {}
 npc_raw_names = {}
 npc_looks = {}
@@ -28,6 +29,9 @@ npc_namevises = {}
 npc_statuses = {}
 npc_flagses = {}
 npc_name_prefixes = {}
+widescan_by_index = {}
+widescan_info = {}
+npc_ids_by_index = {}
 
 loaded_sql_npcs = {}
 loaded_table_npcs = {}
@@ -155,9 +159,11 @@ function get_npc_name(npc_id)
   local mob = false;
   local npc_name = '';
   mob = windower.ffxi.get_mob_by_id(npc_id);
+  
   if (mob) then
     if (mob.name ~= '') then
       npc_names[npc_id] = string.gsub(mob.name, "'", "\'");
+      npc_ids_by_index[mob.index] = npc_id;
     else
       npc_names[npc_id] = false;
     end
@@ -237,6 +243,12 @@ function get_basic_npc_info(data)
   individual_npc_info["R"] = packet['Rotation'];
   
   basic_npc_info[npc_id] = individual_npc_info;
+  
+  if (widescan_by_index[packet['Index']] and (not widescan_info[npc_id])) then
+    widescan_info[npc_id] = widescan_by_index[packet['Index']];
+    widescan_info[npc_id]['id'] = npc_id;
+    write_widescan_info(npc_id);
+  end
 end
 
 -- Returns a string of an NPC's basic info, to be printed when logging
@@ -274,10 +286,9 @@ function log_raw(npc_id, mask, data)
   file.full:append(log_string);
 end
 
--- Logs original packet data for an NPC into table
+-- Builds a table for an NPC's info
 --------------------------------------------------
-function log_packet_to_table(npc_id, data)
-  local log_string = '';
+function build_individual_npc_info(npc_id)
   local npc_info = basic_npc_info[npc_id];
   
   npc_info["Flag"] = npc_flags[npc_id];
@@ -289,6 +300,15 @@ function log_packet_to_table(npc_id, data)
   npc_info["Status"] = npc_statuses[npc_id];
   npc_info["Flags"] = npc_flagses[npc_id];
   npc_info["Name_Prefix"] = npc_name_prefixes[npc_id];
+  
+  return npc_info;
+end
+
+-- Logs original packet data for an NPC into table
+--------------------------------------------------
+function log_packet_to_table(npc_id, data)
+  local log_string = '';
+  local npc_info = build_individual_npc_info(npc_id)
  
   log_string = log_string .. "    [".. tostring(npc_id) .."] = {";
   log_string = log_string .. string.format(
@@ -447,28 +467,28 @@ function compare_npc_tables()
           -- We found an NPC with the same name, position, and look, but with a different ID.
           -- Print the probable new ID.
           
-          file.test:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
-          file.test:append("MOVED?: ".. k .."; to ".. id_moved_keys[moved_id_key] .."\n");
+          file.compare:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
+          file.compare:append("MOVED?: ".. k .."; to ".. id_moved_keys[moved_id_key] .."\n");
           sql_line = make_sql_insert_string(loaded_table_npcs[k]);
-          file.test:append(sql_line .."\n");
+          file.compare:append(sql_line .."\n");
           --print("CHANGED: ".. k .."; ".. npc_comparison);
           --print("MOVED?: ".. k .."; to ".. id_moved_keys[moved_id_key])
         else
           if (not ((v['id'] >= 17744056) and (v['id'] <= 17744148))) then
-            file.test:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
+            file.compare:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
           end
           sql_line = make_sql_insert_string(loaded_table_npcs[k]);
-          file.test:append(sql_line .."\n");
+          file.compare:append(sql_line .."\n");
         end
       else
         -- print("VERIFIED: ".. k.."; ".. loaded_sql_npcs[k]['name']);
       end
     else
-      file.test:append("NOT FOUND: ".. k .."\n");
+      file.compare:append("NOT FOUND: ".. k .."\n");
       --print("NOT FOUND: ".. k);
     end
   end
-  file.test:append("NEW NPCS: \n");
+  file.compare:append("NEW NPCS: \n");
   -- Yes, we have to go through the new NPCs twice. The first time
   -- is to sort a list of keys, because Lua can't key sort.
   for k,v in pairs(loaded_table_npcs) do
@@ -479,7 +499,7 @@ function compare_npc_tables()
   table.sort(new_npcs)
   for _,v in pairs(new_npcs) do
     sql_line = make_sql_insert_string(loaded_table_npcs[v])
-    file.test:append(sql_line .."\n");
+    file.compare:append(sql_line .."\n");
     --print("ADDED: ".. k .."; ".. loaded_table_npcs[k]['name']);
   end
 end
@@ -512,11 +532,25 @@ function make_sql_insert_string(npc)
   return sql_line;
 end
 
+-- Writes a mob's widescan info to a table log
+--------------------------------------------------
+function write_widescan_info(npc_id)
+  local log_string = "    [".. tostring(npc_id) .."] = {";
+  log_string = log_string .. string.format(
+    "['id']=%d, ['name']=\"%s\", ['index']=%d, ['level']=%d",
+    widescan_info[npc_id]['id'],
+    widescan_info[npc_id]['name'],
+    widescan_info[npc_id]['index'],
+    widescan_info[npc_id]['level']
+  )
+  log_string = log_string .. "},\n"
+  file.widescan:append(log_string);
+end
+
 function check_incoming_chunk(id, data, modified, injected, blocked)
   local packet = packets.parse('incoming', data)
 
   if (id == 0x00E) then
-
     local mask = packet['Mask'];
     if (seen_masks[mask] and (not seen_masks[mask][packet['NPC']])) then
       local npc_id = packet['NPC'];
@@ -555,6 +589,17 @@ function check_incoming_chunk(id, data, modified, injected, blocked)
         seen_masks[mask][npc_id] = true;
       end
     end
+  elseif (id == 0xF4) then
+    local index, name, level = packet["Index"], packet["Name"], packet["Level"];
+    if (not widescan_by_index[index]) then
+      widescan_by_index[index] = {['index']=index,['name']=name,['level']=level};
+      local npc_id = npc_ids_by_index[index];
+      if (npc_id and (not widescan_info[npc_id])) then
+        widescan_info[npc_id] = widescan_by_index[index];
+        widescan_info[npc_id]['id'] = npc_id;
+        write_widescan_info(npc_id);
+      end
+    end
   end
 end
 
@@ -562,9 +607,13 @@ windower.register_event('zone change', function(new, old)
   local current_zone = res.zones[new].en;
   file.packet_table = files.new('data/tables/'.. current_zone ..'.lua', true)
   file.full = files.new('data/logs/'.. current_zone ..'.log', true)
+  file.widescan = files.new('data/widescan/'.. current_zone ..'.log', true)
+  widescan_by_index = {}
+  widescan_info = {}
+  npc_ids_by_index = {}
 end)
 
 windower.register_event('incoming chunk', check_incoming_chunk);
-load_sql_into_table("West Ronfaure");
-load_npc_packet_table("West Ronfaure");
-compare_npc_tables();
+--load_sql_into_table("West Ronfaure");
+--load_npc_packet_table("West Ronfaure");
+--compare_npc_tables();
