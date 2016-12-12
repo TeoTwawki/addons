@@ -5,30 +5,23 @@ packets = require('packets')
 pack = require('pack')
 bit = require 'bit'
 
+my_name = windower.ffxi.get_player().name
+
 files = require('files')
 file = T{}
-file.compare = files.new('data/logs/comparison.log', true)
+file.compare = files.new('data/'.. my_name ..'/logs/comparison.log', true)
 
 _addon.name = 'NPC Logger'
-_addon.version = '0.1'
+_addon.version = '0.2'
 _addon.author = 'ibm2431'
 _addon.commands = {'npclogger'}
 
-logged_npcs = S{}
+logged_npcs = {}
 seen_names = S{}
 npc_info = {}
 npc_names = {}
 npc_raw_names = {}
 npc_looks = {}
-npc_flags = {}
-npc_speeds = {}
-npc_speedsubs = {}
-npc_animations = {}
-npc_animationsubs = {}
-npc_namevises = {}
-npc_statuses = {}
-npc_flagses = {}
-npc_name_prefixes = {}
 widescan_by_index = {}
 widescan_info = {}
 npc_ids_by_index = {}
@@ -47,6 +40,8 @@ seen_masks = {
   [0x07] = {},
   [0x0F] = {}
 }
+
+
 
 -- =================================================
 -- ==    Packet Formatting Functions              ==
@@ -232,15 +227,15 @@ function get_basic_npc_info(data)
     end
   end
   
-  individual_npc_info["NPC_ID"] = npc_id;
-  individual_npc_info["Name"] = name;
-  individual_npc_info["POLUtils_Name"] = polutils_name;
-  individual_npc_info["NPC_Type"] = npc_type;
-  individual_npc_info["Index"] = packet['Index'];
-  individual_npc_info["X"] = packet['X'];
-  individual_npc_info["Y"] = packet['Z']; -- Windower and DSP have these axis swapped vs each other
-  individual_npc_info["Z"] = packet['Y'];
-  individual_npc_info["R"] = packet['Rotation'];
+  individual_npc_info["id"] = npc_id;
+  individual_npc_info["name"] = name;
+  individual_npc_info["polutils_name"] = polutils_name;
+  individual_npc_info["npc_type"] = npc_type;
+  individual_npc_info["index"] = packet['Index'];
+  individual_npc_info["x"] = packet['X'];
+  individual_npc_info["y"] = packet['Z']; -- Windower and DSP have these axis swapped vs each other
+  individual_npc_info["z"] = packet['Y'];
+  individual_npc_info["r"] = packet['Rotation'];
   
   basic_npc_info[npc_id] = individual_npc_info;
   
@@ -257,14 +252,14 @@ function basic_npc_info_string(npc_id)
   local npc_info = basic_npc_info[npc_id];
   return string.format(
     "NPC ID: %d\n  Name: %s\n  POLUtils_Name: %s\n  NPC Type: %s\n  XYZR: %.3f, %.3f, %.3f, %d\n",
-    npc_info["NPC_ID"],
-    npc_info["Name"],
-    npc_info["POLUtils_Name"],
-    npc_info["NPC_Type"],
-    npc_info["X"],
-    npc_info["Y"],
-    npc_info["Z"],
-    npc_info["R"]
+    npc_info["id"],
+    npc_info["name"],
+    npc_info["polutils_name"],
+    npc_info["npc_type"],
+    npc_info["x"],
+    npc_info["y"],
+    npc_info["z"],
+    npc_info["r"]
   )
 end
 
@@ -286,58 +281,49 @@ function log_raw(npc_id, mask, data)
   file.full:append(log_string);
 end
 
--- Builds a table for an NPC's info
---------------------------------------------------
-function build_individual_npc_info(npc_id)
-  local npc_info = basic_npc_info[npc_id];
-  
-  npc_info["Flag"] = npc_flags[npc_id];
-  npc_info["Speed"] = npc_speeds[npc_id];
-  npc_info["Speedsub"] = npc_speedsubs[npc_id];
-  npc_info["Animation"] = npc_animations[npc_id];
-  npc_info["Animation_Sub"] = npc_animationsubs[npc_id];
-  npc_info["Namevis"] = npc_namevises[npc_id];
-  npc_info["Status"] = npc_statuses[npc_id];
-  npc_info["Flags"] = npc_flagses[npc_id];
-  npc_info["Name_Prefix"] = npc_name_prefixes[npc_id];
-  
-  return npc_info;
-end
-
 -- Logs original packet data for an NPC into table
 --------------------------------------------------
-function log_packet_to_table(npc_id, data)
+function log_packet_to_table(npc_id, npc_info, data)
   local log_string = '';
-  local npc_info = build_individual_npc_info(npc_id)
- 
+  
   log_string = log_string .. "    [".. tostring(npc_id) .."] = {";
   log_string = log_string .. string.format(
-    "['id']=%d, ['name']=\"%s\", ['polutils_name']=\"%s\", ['npc_type']=\"%s\", ['index']=%d, ['x']=%.3f, ['y']=%.3f, ['z']=%.3f, ['r']=%d, ['flag']=%d, ['speed']=%d, ['speedsub']=%d, ['animation']=%d, ['animationsub']=%d, ['namevis']=%d, ['status']=%d, ['flags']=%d, ['name_prefix']=%d, ",
-    npc_info["NPC_ID"],
-    npc_info["Name"],
-    npc_info["POLUtils_Name"],
-    npc_info["NPC_Type"],
-    npc_info["Index"],
-    npc_info["X"],
-    npc_info["Y"],
-    npc_info["Z"],
-    npc_info["R"],
-    npc_info["Flag"],
-    npc_info["Speed"],
-    npc_info["Speedsub"],
-    npc_info["Animation"],
-    npc_info["Animation_Sub"],
-    npc_info["Namevis"],
-    npc_info["Status"],
-    npc_info["Flags"],
-    npc_info["Name_Prefix"]
+    "['id']=%d, ['name']=\"%s\", ['polutils_name']=\"%s\", ['npc_type']=\"%s\", ['index']=%d, ['x']=%.3f, ['y']=%.3f, ['z']=%.3f, ['r']=%d, ['flag']=%d, ['speed']=%d, ['speedsub']=%d, ['animation']=%d, ['animationsub']=%d, ['namevis']=%d, ['status']=%d, ['flags']=%d, ['name_prefix']=%d, ['look']=\"%s\", ",
+    npc_info['id'],
+    npc_info['name'],
+    npc_info['polutils_name'],
+    npc_info['npc_type'],
+    npc_info['index'],
+    npc_info['x'],
+    npc_info['y'],
+    npc_info['z'],
+    npc_info['r'],
+    npc_info['flag'],
+    npc_info['speed'],
+    npc_info['speedsub'],
+    npc_info['animation'],
+    npc_info['animationsub'],
+    npc_info['namevis'],
+    npc_info['status'],
+    npc_info['flags'],
+    npc_info['name_prefix'],
+    npc_info['look']
   )
-  if (npc_looks[npc_id]) then
-    log_string = log_string .. "['look']=\"".. npc_looks[npc_id] .."\", ";
-  end
   log_string = log_string .. "['raw_packet']=\"".. data:hex() .."\"";
   log_string = log_string .. "},\n"
   file.packet_table:append(log_string);
+end
+
+-- Logs an NPC to memory, writes raw packet, and writes lua table
+--------------------------------------------------
+function log_npc(npc_id, mask, npc_info, data)
+  local basic_info = basic_npc_info[npc_id];
+  for k,v in pairs(basic_info) do
+    npc_info[k] = v;
+  end
+  logged_npcs[npc_id] = npc_info
+  log_raw(npc_id, mask, data);
+  log_packet_to_table(npc_id, npc_info, data);
 end
 
 -- Reads an NPC SQL file and loads their values into a Lua table
@@ -346,9 +332,10 @@ function load_sql_into_table(zone)
   local id, name, polutils_name, r, x, y, z, flag, speed, speedsub, animation, animationsub, namevis, status, flags, look, name_prefix, required_expansion, widescan;
   local capture_string = "(%d+),(.*),(.*),([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,]+),([^,']+),([^,']+),([^,']+),([^,]+),([^,']+),([^,]+),([^,]+)";
   
-  local lines = files.readlines("data/current_sql/".. zone ..".sql")
+  local lines = files.readlines("data/".. my_name .."/current_sql/".. zone ..".sql")
   local loaded_npc = {}
   local num_loaded_npcs = 1
+  
   for _,v in pairs(lines) do
     if (v) then
       v = string.gsub(v, ",'", ",");
@@ -386,19 +373,27 @@ end
 
 -- Loads a table of NPC packets that NPC Logger logged itself.
 --------------------------------------------------
-function load_npc_packet_table(zone)
-  local packet_table = require("data/tables/".. zone);
-  local moved_id_key = '';
-  loaded_table_npcs = table.sort(packet_table);
-  -- Store a "hash" of the NPCs name, position, and look. We can use this to
-  -- help see if an NPC was simply moved to a new ID (rather than being changed.)
-  for k,v in pairs(loaded_table_npcs) do
-    v['look'] = "0x".. string.rpad(v['look'], "0", 40)
-    -- I didn't properly convert for endianness for first logging. Converting here for now.
-    v['flag'] = byte_string_to_int(string.sub(v['raw_packet'], (0x18*2)+1, (0x1C*2)));
-    v['flags'] = byte_string_to_int(string.sub(v['raw_packet'], (0x21*2)+1, (0x25*2)));
-    moved_id_key = make_moved_id_key(v);
-    id_moved_keys[moved_id_key] = k;
+function load_npc_packet_table(zone, into_main_table)
+  local packet_table = require("data/".. my_name .."/tables/".. zone);
+  packet_table = table.sort(packet_table);
+  if (into_main_table) then
+  
+    for npc_id, npc_info in pairs(packet_table) do
+      logged_npcs[npc_id] = npc_info;
+      basic_npc_info[npc_id] = {}
+      for field_name, field_value in pairs(npc_info) do
+        basic_npc_info[npc_id][field_name] = field_value;
+      end
+      npc_looks[npc_id] = npc_info['look'];
+      npc_raw_names[npc_id] = npc_info['name'];
+      npc_names[npc_id] = npc_info['polutils_name'];
+      seen_masks[0x07][npc_id] = true;
+      seen_masks[0x0F][npc_id] = true;
+      seen_masks[0x57][npc_id] = true;
+      npc_ids_by_index[npc_info['index']] = npc_id;
+    end
+  else
+    loaded_table_npcs = packet_table;
   end
 end
 
@@ -413,6 +408,9 @@ function compare_npcs(sql_npc, npclogger_npc)
   -- flag in the list to another in the list.
   local ignore_flags = S{1, 6, 7, 8, 14, 16, 21, 22, 29}
   for _,v in pairs(keys) do
+    if (v == 'look') then
+      npclogger_npc[v] = "0x".. string.rpad(npclogger_npc[v], "0", 40);
+    end
     if (sql_npc[v] ~= npclogger_npc[v]) then
       changes = changes .. "'".. v .."': ".. sql_npc[v] .." changed to ".. npclogger_npc[v] .. " ";
       changed = true;
@@ -436,21 +434,9 @@ function compare_npcs(sql_npc, npclogger_npc)
   end
 end
 
--- Makes a string key for use in checking if a NPC's ID was moved
---------------------------------------------------
-function make_moved_id_key(table)
-  local table_keys = {'polutils_name', 'x', 'y', 'z', 'r', 'animation', 'animationsub', 'status', 'flag', 'flags', 'namevis', 'name_prefix'}
-  local key = '';
-  for _,v in pairs(table_keys) do
-    -- In here due to Bastok Markets? Bad ID is 17739777.
-    key = key .. table[v];
-  end
-  return key;
-end
-
 -- Compares two loaded NPC tables (from target SQL, and NPC Logger's table).
 --------------------------------------------------
-function compare_npc_tables()
+function compare_npc_tables(compress_id_start, compress_id_end)
   local npc_comparison = '';
   local moved_id_key = '';
   local sql_line = '';
@@ -459,27 +445,13 @@ function compare_npc_tables()
     k = ordered_sql_ids[i];
     v = loaded_sql_npcs[k];
     if (loaded_table_npcs[k]) then
-      moved_id_key = make_moved_id_key(v);
       npc_comparison = compare_npcs(loaded_sql_npcs[k], loaded_table_npcs[k]);
       if (npc_comparison) then
-        if (false) then
-        --if (id_moved_keys[moved_id_key] and (id_moved_keys[moved_id_key] ~= v['id'])) then
-          -- We found an NPC with the same name, position, and look, but with a different ID.
-          -- Print the probable new ID.
-          
+        if (not ((v['id'] >= compress_id_start) and (v['id'] <= compress_id_end))) then
           file.compare:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
-          file.compare:append("MOVED?: ".. k .."; to ".. id_moved_keys[moved_id_key] .."\n");
-          sql_line = make_sql_insert_string(loaded_table_npcs[k]);
-          file.compare:append(sql_line .."\n");
-          --print("CHANGED: ".. k .."; ".. npc_comparison);
-          --print("MOVED?: ".. k .."; to ".. id_moved_keys[moved_id_key])
-        else
-          if (not ((v['id'] >= 17744056) and (v['id'] <= 17744148))) then
-            file.compare:append("CHANGED: ".. k .."; ".. npc_comparison .."\n");
-          end
-          sql_line = make_sql_insert_string(loaded_table_npcs[k]);
-          file.compare:append(sql_line .."\n");
         end
+        sql_line = make_sql_insert_string(loaded_table_npcs[k]);
+        file.compare:append(sql_line .."\n");
       else
         -- print("VERIFIED: ".. k.."; ".. loaded_sql_npcs[k]['name']);
       end
@@ -498,7 +470,7 @@ function compare_npc_tables()
   end
   table.sort(new_npcs)
   for _,v in pairs(new_npcs) do
-    sql_line = make_sql_insert_string(loaded_table_npcs[v])
+    sql_line = make_sql_insert_string(loaded_table_npcs[v], true)
     file.compare:append(sql_line .."\n");
     --print("ADDED: ".. k .."; ".. loaded_table_npcs[k]['name']);
   end
@@ -506,7 +478,10 @@ end
 
 -- Takes an NPC table and outputs and appropriate input statement
 --------------------------------------------------
-function make_sql_insert_string(npc)
+function make_sql_insert_string(npc, new_npc)
+  if (new_npc) then
+    npc["look"] = "0x".. string.rpad(npc["look"], "0", 40)
+  end
   local sql_line = string.format(
     "INSERT INTO `npc_list` VALUES (%d,'%s','%s',%d,%.3f,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%s,%d);",
     npc["id"],
@@ -524,7 +499,7 @@ function make_sql_insert_string(npc)
     npc["namevis"],
     npc["status"],
     npc["flags"],
-    npc['look'],
+    npc["look"],
     npc["name_prefix"],
     'null',
     0
@@ -547,6 +522,18 @@ function write_widescan_info(npc_id)
   file.widescan:append(log_string);
 end
 
+-- Sets up tables and files for use in the current zone
+--------------------------------------------------
+function setup_zone(zone)
+  local current_zone = res.zones[zone].en;
+  file.packet_table = files.new('data/'.. my_name ..'/tables/'.. current_zone ..'.lua', true)
+  file.full = files.new('data/'.. my_name ..'/logs/'.. current_zone ..'.log', true)
+  file.widescan = files.new('data/'.. my_name ..'/widescan/'.. current_zone ..'.log', true)
+  widescan_by_index = {}
+  widescan_info = {}
+  npc_ids_by_index = {}
+end
+
 function check_incoming_chunk(id, data, modified, injected, blocked)
   local packet = packets.parse('incoming', data)
 
@@ -554,6 +541,7 @@ function check_incoming_chunk(id, data, modified, injected, blocked)
     local mask = packet['Mask'];
     if (seen_masks[mask] and (not seen_masks[mask][packet['NPC']])) then
       local npc_id = packet['NPC'];
+      local npc_info = {}
       if ((packet['Name'] ~= '') and (not npc_raw_names[packet['NPC']]) and (not (mask == 0x57))) then
         -- Valid raw name we haven't seen yet is set.
         npc_raw_names[packet['NPC']] = packet['Name'];
@@ -563,29 +551,29 @@ function check_incoming_chunk(id, data, modified, injected, blocked)
         
         if (mask == 0x57) then
           -- Equipped model.
-          npc_looks[packet['NPC']] = string.sub(data:hex(), (0x30*2)+1, (0x44*2));
+          npc_info['look'] = string.sub(data:hex(), (0x30*2)+1, (0x44*2));
         elseif ((mask == 0x0F) or (mask == 0x07)) then
           -- Basic/standard NPC model.
-          npc_looks[packet['NPC']] = string.sub(data:hex(), (0x30*2)+1, (0x34*2));
+          npc_info['look'] = string.sub(data:hex(), (0x30*2)+1, (0x34*2));
         end
+        npc_looks = npc_info['look'];
         
-        npc_flags[npc_id] = byte_string_to_int(string.sub(data:hex(), (0x18*2)+1, (0x1C*2)));
-        npc_speeds[npc_id] = tonumber(string.sub(data:hex(), (0x1C*2)+1, (0x1D*2)), 16);
-        npc_speedsubs[npc_id] = tonumber(string.sub(data:hex(), (0x1D*2)+1, (0x1E*2)), 16);
-        npc_animations[npc_id] = tonumber(string.sub(data:hex(), (0x1F*2)+1, (0x20*2)), 16);
-        npc_animationsubs[npc_id] = tonumber(string.sub(data:hex(), (0x2A*2)+1, (0x2B*2)), 16);
-        npc_namevises[npc_id] = tonumber(string.sub(data:hex(), (0x2B*2)+1, (0x2C*2)), 16);
-        npc_statuses[npc_id] = tonumber(string.sub(data:hex(), (0x20*2)+1, (0x21*2)), 16);
-        npc_flagses[npc_id] = byte_string_to_int(string.sub(data:hex(), (0x21*2)+1, (0x25*2)));
-        npc_name_prefixes[npc_id] = tonumber(string.sub(data:hex(), (0x27*2)+1, (0x28*2)), 16);
+        npc_info['flag'] = byte_string_to_int(string.sub(data:hex(), (0x18*2)+1, (0x1C*2)));
+        npc_info['speed'] = tonumber(string.sub(data:hex(), (0x1C*2)+1, (0x1D*2)), 16);
+        npc_info['speedsub'] = tonumber(string.sub(data:hex(), (0x1D*2)+1, (0x1E*2)), 16);
+        npc_info['animation'] = tonumber(string.sub(data:hex(), (0x1F*2)+1, (0x20*2)), 16);
+        npc_info['animationsub'] = tonumber(string.sub(data:hex(), (0x2A*2)+1, (0x2B*2)), 16);
+        npc_info['namevis'] = tonumber(string.sub(data:hex(), (0x2B*2)+1, (0x2C*2)), 16);
+        npc_info['status'] = tonumber(string.sub(data:hex(), (0x20*2)+1, (0x21*2)), 16);
+        npc_info['flags'] = byte_string_to_int(string.sub(data:hex(), (0x21*2)+1, (0x25*2)));
+        npc_info['name_prefix'] = tonumber(string.sub(data:hex(), (0x27*2)+1, (0x28*2)), 16);
         
         if (not basic_npc_info[npc_id]) then
           -- Give the game a second or two to load the mob into memory before using Windower functions.
           coroutine.schedule(function() get_npc_name(npc_id) end, 2);
           coroutine.schedule(function() get_basic_npc_info(data) end, 2.2);
         end
-        coroutine.schedule(function() log_raw(packet['NPC'], packet['Mask'], data) end, 3);
-        coroutine.schedule(function() log_packet_to_table(packet['NPC'], data) end, 3.2);
+        coroutine.schedule(function() log_npc(npc_id, packet['Mask'], npc_info, data) end, 3);
         seen_masks[mask][npc_id] = true;
       end
     end
@@ -604,16 +592,21 @@ function check_incoming_chunk(id, data, modified, injected, blocked)
 end
 
 windower.register_event('zone change', function(new, old)
-  local current_zone = res.zones[new].en;
-  file.packet_table = files.new('data/tables/'.. current_zone ..'.lua', true)
-  file.full = files.new('data/logs/'.. current_zone ..'.log', true)
-  file.widescan = files.new('data/widescan/'.. current_zone ..'.log', true)
-  widescan_by_index = {}
-  widescan_info = {}
-  npc_ids_by_index = {}
+  setup_zone(new);
 end)
 
+setup_zone(windower.ffxi.get_info().zone)
 windower.register_event('incoming chunk', check_incoming_chunk);
---load_sql_into_table("West Ronfaure");
---load_npc_packet_table("West Ronfaure");
---compare_npc_tables();
+
+-- Edit/uncomment the next line to simply load a table into memory
+-- (If you captured NPCs and just want to hop around and get widescane data)
+--load_npc_packet_table("Abyssea - Attohwa", true);
+
+-- Edit/uncomment the following three lines to compare a table to SQL
+--load_sql_into_table("South Gustaberg"); -- (npclogger/data/character/current sql/"zone".sql
+--load_npc_packet_table("South Gustaberg"); -- (npclogger/data/character/tables/"zone".sql
+--compare_npc_tables(); -- Prints results to: npclogger/data/logs/comparison.log
+
+-- Edit/uncomment the following line to "compress" SQL Insert changes for NPCs between
+-- the two IDs (ie: don't show CHANGED: blah). Good for copy/pasting entire blocks.
+--compare_npc_tables(17216135, 17216155);
